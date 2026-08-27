@@ -87,7 +87,20 @@ return [
         'pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
+
+            // Native Read/Write Split Routing
+            'read' => [
+                'host' => [
+                    env('DB_REPLICA_HOST', 'pg_replica'),
+                ],
+            ],
+            'write' => [
+                'host' => [
+                    env('DB_HOST', 'pg_master'),
+                ],
+            ],
+            'sticky' => true, // Crucial for data consistency immediately after a write
+
             'port' => env('DB_PORT', '5432'),
             'database' => env('DB_DATABASE', 'laravel'),
             'username' => env('DB_USERNAME', 'root'),
