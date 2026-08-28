@@ -1,6 +1,10 @@
 networks:
   backend-net:
     driver: bridge
+    internal: true
+  frontend-net:
+    driver: bridge
+    internal: false
 
 volumes:
   postgres_master_data:
@@ -11,6 +15,7 @@ volumes:
 services:
   nginx:
     image: nginx:alpine-slim
+    restart: unless-stopped
     ports:
       - "80:80"
     volumes:
@@ -21,12 +26,13 @@ services:
         condition: service_started
     networks:
       - backend-net
+      - frontend-net
 
   app:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
-    restart: always
+    restart: unless-stopped
     volumes:
       - ./:/var/www/html
       - ./docker/php/zzz-dev.ini:/usr/local/etc/php/conf.d/zzz-dev.ini
@@ -58,7 +64,7 @@ services:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
-    restart: always
+    restart: unless-stopped
     volumes:
       - ./:/var/www/html
       - ./docker/php/zzz-dev.ini:/usr/local/etc/php/conf.d/zzz-dev.ini
@@ -93,6 +99,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     environment:
@@ -118,6 +125,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:4-management-alpine
+    restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
@@ -142,13 +150,15 @@ services:
 
   pg_master:
     image: postgres:17-alpine
+    restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
       POSTGRES_DB: ${DB_DATABASE:-laravel_prod}
       POSTGRES_USER: ${DB_USERNAME:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-Welcome123@}
-      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256\nhost replication all all trust"
+      POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER:-replicator}
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-ReplicaSecure123@}
       # FIX: Point PGDATA to a sub-folder so Postgres controls the folder mask
       PGDATA: /var/lib/postgresql/data/pgdata
     command: >
@@ -158,6 +168,7 @@ services:
       -c max_replication_slots=5
     volumes:
       - postgres_master_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-replication.sh:/docker-entrypoint-initdb.d/init-replication.sh
     networks:
       - backend-net
     healthcheck:
@@ -174,13 +185,15 @@ services:
 
   pg_replica:
     image: postgres:17-alpine
+    restart: unless-stopped
     ports:
       - "5433:5432"
     user: postgres
     environment:
-      PGUSER: ${DB_USERNAME:-postgres}
-      PGPASSWORD: ${DB_PASSWORD:-Welcome123@}
+      PGUSER: ${POSTGRES_REPLICATION_USER:-replicator}
+      PGPASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-ReplicaSecure123@}
       PGHOST: pg_master
+      POSTGRES_DB: ${DB_DATABASE:-laravel_prod}
       PGDATA: /var/lib/postgresql/data/pgdata
     command: >
       sh -c "
@@ -194,7 +207,7 @@ services:
       mkdir -p $$PGDATA;
       rm -rf $$PGDATA/*;
 
-      pg_basebackup -h pg_master -D $$PGDATA -U $$PGUSER -vP -R;
+      pg_basebackup -h pg_master -D $$PGDATA -U $$PGUSER -vP -R --slot=laravel_replica_slot;
       echo 'Sync complete! Starting PostgreSQL standby service...';
       exec postgres
       "
@@ -206,7 +219,7 @@ services:
     networks:
       - backend-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$PGUSER -d ${DB_DATABASE:-laravel_prod}"]
+      test: ["CMD-SHELL", "pg_isready -U $$PGUSER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 5
