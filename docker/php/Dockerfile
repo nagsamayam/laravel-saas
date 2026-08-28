@@ -1,51 +1,66 @@
-FROM php:8.4-fpm-alpine
+# ==============================================================================
+# STAGE 1: Base & Extension Assembly
+# ==============================================================================
+FROM php:8.4-fpm-alpine AS base
 
-# Install PHP extension installer
-COPY --from=mlocati/php-extension-installer \
-    /usr/bin/install-php-extensions \
-    /usr/local/bin/
+# Install PHP extension installer helper
+COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
-# Install required PHP extensions and their runtime dependencies
-RUN install-php-extensions \
-    pdo_pgsql \
-    zip \
-    gd \
-    pcntl \
-    opcache \
-    redis \
-    amqp
+# Install system extensions
+RUN install-php-extensions pdo_pgsql zip gd pcntl opcache redis amqp sockets
+
+# Set production configuration defaults
+RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+COPY docker/php/prod-opcache.ini "$PHP_INI_DIR/conf.d/opcache.ini"
 
 WORKDIR /var/www/html
 
-# Use production PHP configuration
-RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+# ==============================================================================
+# STAGE 2: Vendor Builder (Dependency Isolation)
+# ==============================================================================
+FROM base AS builder
 
-# Configure OPcache
-COPY docker/php/prod-opcache.ini \
-    "$PHP_INI_DIR/conf.d/opcache.ini"
+# Bring in official Composer
+COPY --from=composer:2.8 /usr/bin/composer /usr/bin/composer
 
-# Create a non-root application user
-RUN adduser -D \
-    -u 1000 \
-    -h /home/laravel \
-    -G www-data \
-    laravel
+# Copy only dependency maps first to utilize Docker layer cache
+COPY composer.json composer.lock ./
 
-# Copy application files with correct ownership
-COPY --chown=laravel:laravel . /var/www/html
+# Install vendor packages without running hooks/scripts (code isn't copied yet)
+RUN composer install \
+    --no-dev \
+    --no-interaction \
+    --no-plugins \
+    --no-scripts \
+    --prefer-dist
 
-# Ensure Laravel writable directories have appropriate permissions
-RUN mkdir -p /var/www/html/storage/framework/cache/data \
-             /var/www/html/storage/framework/sessions \
-             /var/www/html/storage/framework/views \
-             /var/www/html/storage/logs \
-             /var/www/html/bootstrap/cache \
-    && chown -R laravel:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
-    && chmod -R ug+rwx /var/www/html/storage /var/www/html/bootstrap/cache
+# ==============================================================================
+# STAGE 3: Final Production Image
+# ==============================================================================
+FROM base AS runner
 
-# Run as non-root user
+RUN adduser -D -u 1000 -h /home/laravel -G www-data laravel
+
+RUN mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
+    && chown -R laravel:www-data bootstrap/cache storage \
+    && chmod -R 775 bootstrap/cache storage
+
+COPY --from=builder --chown=laravel:www-data /var/www/html/vendor ./vendor
+COPY --chown=laravel:www-data . .
+
+COPY --from=composer:2.8 /usr/bin/composer /usr/bin/composer
+RUN composer dump-autoload --no-dev --classmap-authoritative --no-scripts \
+    && rm /usr/bin/composer
+
+# Copy the entrypoint script and make it executable
+COPY docker/php/entrypoint.sh /usr/local/bin/docker-entrypoint
+RUN chmod +x /usr/local/bin/docker-entrypoint
+
 USER laravel
 
 EXPOSE 9000
+
+# Set the entrypoint script to run on boot
+ENTRYPOINT ["docker-entrypoint"]
 
 CMD ["php-fpm"]
