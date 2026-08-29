@@ -130,7 +130,7 @@ jobs:
 
       - name: Create Multi-Platform Manifest and Push
         run: |
-          # ✅ FIXED: Added double quotes around the image registration string format
+          # Added double quotes around the image registration string format
           DIGESTS=$(printf "${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/app@sha256:%s " $(ls /tmp/digests))
           
           # Create and push the combined multi-platform manifests seamlessly
