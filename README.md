@@ -56,3 +56,11 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+# Tag and push strictly for Nginx
+git tag -a nginx-v1.0.0 -m "Nginx release 1.0.0"
+git push origin nginx-v1.0.0
+
+# # Tag and push strictly for the Laravel App
+git tag -a app-v1.0.0 -m "App release 1.0.0"
+git push origin app-v1.0.0

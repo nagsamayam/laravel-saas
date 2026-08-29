@@ -4,8 +4,11 @@ on:
   push:
     branches:
       - main # Triggers when code is merged into main
+    paths:
+      - 'docker/nginx/**'          # Only run if Nginx files change
+      - '.github/workflows/deploy-nginx.yml'
     tags:
-      - 'v*' # Triggers when you create a release tag like v1.0.0
+      - 'nginx-v*'                 # Listens ONLY to Nginx tags (e.g., nginx-v1.0.0)
 
 env:
   REGISTRY: ghcr.io

@@ -4,8 +4,11 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'docker/nginx/**'          # Ignore changes made strictly to Nginx
+      - '.github/workflows/deploy-nginx.yml'
     tags:
-      - 'v*'
+      - 'app-v*'                   # Listens ONLY to App tags (e.g., app-v1.0.0)
 
 env:
   REGISTRY: ghcr.io
