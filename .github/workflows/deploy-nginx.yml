@@ -43,6 +43,7 @@ jobs:
           context: .
           file: docker/nginx/Dockerfile
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/nginx:latest
             ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/nginx:${{ github.sha }}
