@@ -7,7 +7,7 @@ FROM php:8.4-fpm-alpine AS base
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
 # Install system extensions
-RUN install-php-extensions pdo_pgsql zip gd pcntl opcache redis amqp sockets
+RUN install-php-extensions pdo_pgsql zip gd pcntl opcache redis amqp sockets intl
 
 # Set production configuration defaults
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
