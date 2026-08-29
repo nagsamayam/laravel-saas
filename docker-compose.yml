@@ -9,6 +9,7 @@ networks:
 volumes:
   postgres_master_data:
   postgres_replica_data:
+  cloudbeaver_workspace:
   redis_data:
   rabbitmq_data:
 
@@ -69,6 +70,7 @@ services:
       - ./:/var/www/html
       - ./docker/php/zzz-dev.ini:/usr/local/etc/php/conf.d/zzz-dev.ini
     environment:
+      LARAVEL_DEFAULT_QUEUE: ${RABBITMQ_QUEUE:-default}
       LARAVEL_QUEUE_COMMAND: ${LARAVEL_QUEUE_COMMAND:-listen}
     command: >
       sh -c "until nc -z -v -w3 rabbitmq 5672; do
@@ -76,7 +78,7 @@ services:
                sleep 3;
              done;
              echo 'RabbitMQ is online! Booting Laravel asynchronous worker...';
-             php artisan queue:$${LARAVEL_QUEUE_COMMAND} rabbitmq --queue=default --tries=3"
+             php artisan queue:$${LARAVEL_QUEUE_COMMAND} rabbitmq --queue=$${LARAVEL_DEFAULT_QUEUE} --tries=3"
     depends_on:
       pg_master:
         condition: service_healthy
@@ -126,14 +128,15 @@ services:
   rabbitmq:
     image: rabbitmq:4-management-alpine
     restart: unless-stopped
+    expose:
+      - 5672
+      - 15672
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-    ports:
-      - "5672:5672"   # Main AMQP Messaging Port
-      - "15672:15672" # Web Management Dashboard Port
+      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
     networks:
       - backend-net
     healthcheck:
@@ -152,7 +155,7 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: ${DB_DATABASE:-laravel_prod}
       POSTGRES_USER: ${DB_USERNAME:-postgres}
@@ -187,7 +190,7 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     user: postgres
     environment:
       PGUSER: ${POSTGRES_REPLICATION_USER:-replicator}
@@ -229,4 +232,31 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-
+    
+  cloudbeaver:
+    image: dbeaver/cloudbeaver:latest
+    restart: unless-stopped
+    environment:
+      CLOUDBEAVER_ROOT_URI: /cloudbeaver/
+    volumes:
+      - cloudbeaver_workspace:/opt/cloudbeaver/workspace
+    networks:
+      - backend-net
+    depends_on:
+      pg_master:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://127.0.0.1:8978/cloudbeaver/ || exit 1"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 256M

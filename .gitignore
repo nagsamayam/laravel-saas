@@ -25,3 +25,11 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# CloudBeaver / DBeaver Workspace Cache and Configuration
+.dbeaver/
+GlobalConfiguration/.dbeaver/
+**/_product/
+**/.data-sources.json.bak
+.metadata
+.data
