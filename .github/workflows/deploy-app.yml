@@ -139,7 +139,7 @@ jobs:
           
           echo "Merging the following platform digests: $DIGESTS"
           
-          # ✅ FIXED: Read the tags multi-line block cleanly to prevent syntax parsing crashes
+          # Read the tags multi-line block cleanly to prevent syntax parsing crashes
           echo "${{ steps.meta.outputs.tags }}" | while read -r tag; do
             if [ -n "$tag" ]; then
               echo "Stitching manifest for tag: $tag"
