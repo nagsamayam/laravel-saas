@@ -134,8 +134,13 @@ jobs:
 
       - name: Create Multi-Platform Manifest and Push
         run: |
-          # Added double quotes around the image registration string format
-          DIGESTS=$(printf "${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/app@sha256:%s " $(ls /tmp/digests))
+          # Convert repository name to lowercase safely
+          REPO_LOWER=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          
+          # ✅ FIXED: Use xargs to safely stitch the directory filenames into a perfect space-separated text string
+          DIGESTS=$(ls /tmp/digests | xargs -I {} echo "${{ env.REGISTRY }}/${REPO_LOWER}/app@sha256:{}" | xargs)
+          
+          echo "Merging the following platform digests: $DIGESTS"
           
           # Create and push the combined multi-platform manifests seamlessly
           for tag in ${{ steps.meta.outputs.tags }}; do
