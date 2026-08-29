@@ -26,7 +26,7 @@ jobs:
           - platform: linux/amd64
             runner: ubuntu-latest       # 🖥️ Intel code executes on native Intel servers
           - platform: linux/arm64
-            runner: ubuntu-24.04-arm64  # 🚀 ARM code executes on native ARM servers (No QEMU needed!)
+            runner: ubuntu-24.04-arm
     
     # 🌟 DYNAMICALLY SCALE RUNNERS BY ARCHITECTURE
     runs-on: ${{ matrix.runner }}
