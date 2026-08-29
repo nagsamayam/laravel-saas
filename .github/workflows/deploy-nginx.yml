@@ -52,6 +52,7 @@ jobs:
             
             # Uses regex matching to parse 'nginx-v1.0.2' -> cleanly outputs version '1.0.2' without warnings
             type=match,pattern=nginx-v(\d+\.\d+\.\d+),group=1
+            
             # Extracts only Major.Minor digits -> outputs '1.0' tracking family
             type=match,pattern=nginx-v(\d+\.\d+),group=1
 
