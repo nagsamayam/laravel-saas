@@ -16,14 +16,20 @@ env:
 
 jobs:
   # ==============================================================================
-  # JOB 1: Build Architectures in Parallel
+  # JOB 1: Build Architectures in Parallel NATIVELY
   # ==============================================================================
   build-manifest-chunks:
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux/amd64, linux/arm64]
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest       # 🖥️ Intel code executes on native Intel servers
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm64  # 🚀 ARM code executes on native ARM servers (No QEMU needed!)
+    
+    # 🌟 DYNAMICALLY SCALE RUNNERS BY ARCHITECTURE
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
@@ -32,7 +38,6 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      # Required for compiling cross-platform code inside docker buildx chunks
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -43,26 +48,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ✅ Fixed: Safely compute lowercase repository name to prevent "ghcr.io//app" format errors
       - name: Inject Casing Variables
         run: |
           echo "REPO_LOWER=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
 
-      # Extract metadata dynamically based on the current Git event context
-      - name: Extract Docker Metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app
-
-      # Prepare a clean platform string for storage tagging (e.g. linux-amd64)
       - name: Prepare Platform Variant Suffix
         id: platform_string
         run: |
           PLATFORM_STR="${{ matrix.platform }}"
           echo "variant=${PLATFORM_STR//\//-}" >> $GITHUB_OUTPUT
 
-      # Build and push the specific platform chunk as an isolated digest
+      # Build and push natively on the native matching runner hardware
       - name: Build and Push Platform Chunk
         id: build
         uses: docker/build-push-action@v6
@@ -70,7 +66,6 @@ jobs:
           context: .
           file: docker/php/Dockerfile
           platforms: ${{ matrix.platform }}
-          # ✅ Fixed: Dynamically routes targeting path strings with the lowercase suffix injection
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/app,push-by-digest=true,name-canonical=true,push=true
           build-args: |
             APP_ENV=production
@@ -78,14 +73,12 @@ jobs:
           cache-from: type=gha,scope=${{ steps.platform_string.outputs.variant }}
           cache-to: type=gha,mode=max,scope=${{ steps.platform_string.outputs.variant }}
 
-      # Export the digest ID to a file so Job 2 can read it
       - name: Export Digest Configuration
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
-      # Upload the digest file to GitHub's temporary storage matrix
       - name: Upload Digest Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -111,6 +104,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Download pieces built natively across both separate servers
       - name: Download All Platform Digests
         uses: actions/download-artifact@v4
         with:
@@ -118,7 +112,7 @@ jobs:
           pattern: digests-*
           merge-multiple: true
 
-      # ✅ Fixed: Safely compute lowercase repository name for the stitching context
+      # Compute lowercase directory target
       - name: Inject Casing Variables
         run: |
           echo "REPO_LOWER=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
@@ -136,10 +130,8 @@ jobs:
 
       - name: Create Multi-Platform Manifest and Push
         run: |
-          # Gather all downloaded digest hashes from the previous parallel runners
           DIGESTS=$(printf '${{ env.REGISTRY }}'/${{ env.REPO_LOWER }}/app@sha256:%s ' ' $(ls /tmp/digests))
           
-          # Match and build the combined multi-arch tags seamlessly
           for tag in ${{ steps.meta.outputs.tags }}; do
             docker buildx imagetools create -t "$tag" $DIGESTS
           done
