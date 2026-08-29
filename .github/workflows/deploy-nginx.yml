@@ -45,14 +45,14 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/nginx
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,format=short,prefix=sha-
             
-            # ✅ FIXED: Uses regex matching to parse 'nginx-v1.0.2' -> cleanly outputs version '1.0.2' without warnings
+            # Uses regex matching to parse 'nginx-v1.0.2' -> cleanly outputs version '1.0.2' without warnings
             type=match,pattern=nginx-v(\d+\.\d+\.\d+),group=1
-            # ✅ FIXED: Extracts only Major.Minor digits -> outputs '1.0' tracking family
+            # Extracts only Major.Minor digits -> outputs '1.0' tracking family
             type=match,pattern=nginx-v(\d+\.\d+),group=1
 
       # 🌐 Build & Push Custom Nginx Image
