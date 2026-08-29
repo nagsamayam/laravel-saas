@@ -117,21 +117,20 @@ jobs:
         run: |
           echo "REPO_LOWER=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
 
+            # 🌟 EXTRACT DOCKER METADATA
       - name: Extract Docker Metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app
           tags: |
-            # Generate 'latest' tag only on main branch pushes
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            # Generate a standard short commit SHA tag
             type=sha,format=short,prefix=sha-
-            # ✅ FIXED: Strips 'app-v' so 'app-v1.0.8' safely generates standard '1.0.8'
-            type=semver,pattern={{version}},value=${{ github.ref_name }},prefix=
-            # ✅ FIXED: Safely generates minor tracking family markers (e.g. '1.0')
-            type=semver,pattern={{major}}.{{minor}},value=${{ github.ref_name }},prefix=
-
+            
+            # ✅ FIXED: Uses RegExp to extract raw digits from 'app-v1.0.9' -> outputs '1.0.9'
+            type=match,pattern=app-v(\d+\.\d+\.\d+),group=1
+            # ✅ FIXED: Extracts only Major.Minor digits -> outputs '1.0'
+            type=match,pattern=app-v(\d+\.\d+),group=1
 
       - name: Create Multi-Platform Manifest and Push
         run: |
