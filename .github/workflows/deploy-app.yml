@@ -15,13 +15,14 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # 🌟 JOB 1: Build architectures in parallel speeds
+  # ==============================================================================
+  # JOB 1: Build Architectures in Parallel
+  # ==============================================================================
   build-manifest-chunks:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # Separate the builds onto two distinct parallel runners
         platform: [linux/amd64, linux/arm64]
     permissions:
       contents: read
@@ -30,6 +31,10 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+
+      # Required for compiling cross-platform code inside docker buildx chunks
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -41,21 +46,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract metadata dynamically
+      # ✅ Fixed: Safely compute lowercase repository name to prevent "ghcr.io//app" format errors
+      - name: Inject Casing Variables
+        run: |
+          echo "REPO_LOWER=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
+
+      # Extract metadata dynamically based on the current Git event context
       - name: Extract Docker Metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/app
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app
 
-      # Prepare a clean platform string string for storage tagging (e.g. linux-amd64)
+      # Prepare a clean platform string for storage tagging (e.g. linux-amd64)
       - name: Prepare Platform Variant Suffix
         id: platform_string
         run: |
           PLATFORM_STR="${{ matrix.platform }}"
           echo "variant=${PLATFORM_STR//\//-}" >> $GITHUB_OUTPUT
 
-      # Build and push the specific platform chunk as a separate digest
+      # Build and push the specific platform chunk as an isolated digest
       - name: Build and Push Platform Chunk
         id: build
         uses: docker/build-push-action@v6
@@ -63,7 +73,7 @@ jobs:
           context: .
           file: docker/php/Dockerfile
           platforms: ${{ matrix.platform }}
-          # Push by digest instead of tag directly so they can be merged later
+          # ✅ Fixed: Dynamically routes targeting path strings with the lowercase suffix injection
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/app,push-by-digest=true,name-canonical=true,push=true
           build-args: |
             APP_ENV=production
@@ -78,7 +88,7 @@ jobs:
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
-      # Upload the digest file to GitHub's temporary storage
+      # Upload the digest file to GitHub's temporary storage matrix
       - name: Upload Digest Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -87,7 +97,9 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # 🌟 JOB 2: Stitch the chunks together instantly into a single version tag
+  # ==============================================================================
+  # JOB 2: Stitch Chunks Together into One Combined Version Tag
+  # ==============================================================================
   merge-manifests:
     runs-on: ubuntu-latest
     needs: build-manifest-chunks
@@ -109,11 +121,16 @@ jobs:
           pattern: digests-*
           merge-multiple: true
 
+      # ✅ Fixed: Safely compute lowercase repository name for the stitching context
+      - name: Inject Casing Variables
+        run: |
+          echo "REPO_LOWER=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
+
       - name: Extract Docker Metadata for Final Tagging
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/app
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/app
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,format=short,prefix=sha-
@@ -122,13 +139,10 @@ jobs:
 
       - name: Create Multi-Platform Manifest and Push
         run: |
-          # Convert repo name to lowercase
-          REPO_LOWER=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          # Gather all downloaded digest hashes from the previous parallel runners
+          DIGESTS=$(printf '${{ env.REGISTRY }}'/${{ env.REPO_LOWER }}/app@sha256:%s ' ' $(ls /tmp/digests))
           
-          # Gather all downloaded digest hashes
-          DIGESTS=$(printf '${{ env.REGISTRY }}'/$REPO_LOWER/app@sha256:%s ' ' $(ls /tmp/digests))
-          
-          # Create and push the combined multi-arch tags
+          # Match and build the combined multi-arch tags seamlessly
           for tag in ${{ steps.meta.outputs.tags }}; do
             docker buildx imagetools create -t "$tag" $DIGESTS
           done
