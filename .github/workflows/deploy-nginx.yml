@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main # Triggers when code is merged into main
+    tags:
+      - 'v*' # Triggers when you create a release tag like v1.0.0
 
 env:
   REGISTRY: ghcr.io
@@ -35,6 +37,18 @@ jobs:
       - name: Inject Slug Environment Variables
         run: |
           echo "REPO_LOWER=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
+      
+      # Automatically extracts semantic tags and git metadata
+      - name: Extract Docker Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,format=short,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
 
       # 🌐 Build & Push Custom Nginx Image
       - name: Build and Push Nginx Image
@@ -44,8 +58,8 @@ jobs:
           file: docker/nginx/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/nginx:latest
-            ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/nginx:${{ github.sha }}
+          # Use the tags generated automatically by the metadata step
+          tags: ${{ id.meta.outputs.tags }}
+          labels: ${{ id.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
