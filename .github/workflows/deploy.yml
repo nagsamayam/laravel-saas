@@ -1,0 +1,50 @@
+name: Build and Publish Nginx Image Only
+
+on:
+  push:
+    branches:
+      - main # Triggers when code is merged into main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-nginx:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # Mandatory permission to upload images to GHCR
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      # Log into GitHub Container Registry using the built-in system token
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Convert repository name to lowercase to prevent Docker naming errors
+      - name: Inject Slug Environment Variables
+        run: |
+          echo "REPO_LOWER=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
+
+      # 🌐 Build & Push Custom Nginx Image
+      - name: Build and Push Nginx Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/nginx/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/nginx:latest
+            ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/nginx:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

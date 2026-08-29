@@ -1,0 +1,5 @@
+services:
+  nginx:
+    # 🌟 Overwrites the volumes block for production to ensure immutability
+    volumes:
+      - /var/www/html/public:/var/www/html/public # Only mount assets, do NOT mount config files

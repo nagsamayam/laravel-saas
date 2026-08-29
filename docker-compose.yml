@@ -15,7 +15,7 @@ volumes:
 
 services:
   nginx:
-    image: nginx:alpine-slim
+    image: ${NGINX_IMAGE:-ghcr.io/nagsamayam/laravel-saas/nginx:latest}
     restart: unless-stopped
     ports:
       - "80:80"
