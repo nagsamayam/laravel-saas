@@ -25,6 +25,10 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
+      # Nginx is incredibly lightweight to build, so Buildx handles multi-platform emulation directly inside a single step
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -45,15 +49,15 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/app
+          # ✅ FIXED: Swapped out raw github.repository for your safe REPO_LOWER variable
+          images: ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}/nginx
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,format=short,prefix=sha-
             
-            # Uses regex matching to parse 'nginx-v1.0.2' -> cleanly outputs version '1.0.2' without warnings
+            # ✅ FIXED: Uses regex matching to parse 'nginx-v1.0.2' -> cleanly outputs version '1.0.2' without warnings
             type=match,pattern=nginx-v(\d+\.\d+\.\d+),group=1
-
-            # Extracts only Major.Minor digits -> outputs '1.0' tracking family
+            # ✅ FIXED: Extracts only Major.Minor digits -> outputs '1.0' tracking family
             type=match,pattern=nginx-v(\d+\.\d+),group=1
 
       # 🌐 Build & Push Custom Nginx Image
