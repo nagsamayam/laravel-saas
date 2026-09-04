@@ -160,7 +160,7 @@ services:
           memory: 512M
 
   pg_master:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     ports:
       - "127.0.0.1:5432:5432"
@@ -170,20 +170,21 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-Welcome123@}
       POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER:-replicator}
       POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-ReplicaSecure123@}
-      # FIX: Point PGDATA to a sub-folder so Postgres controls the folder mask
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
       PGDATA: /var/lib/postgresql/data/pgdata
     command: >
       postgres
       -c wal_level=replica
       -c max_wal_senders=5
       -c max_replication_slots=5
+      -c hot_standby=on
     volumes:
       - postgres_master_data:/var/lib/postgresql/data
       - ./docker/postgres/init-replication.sh:/docker-entrypoint-initdb.d/init-replication.sh
     networks:
       - backend-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -195,32 +196,40 @@ services:
           memory: 512M
 
   pg_replica:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     ports:
       - "127.0.0.1:5433:5432"
-    user: postgres
+    # REMOVED 'user: postgres' to let the entrypoint handle user privileges natively
+    # user: postgres
     environment:
       PGUSER: ${POSTGRES_REPLICATION_USER:-replicator}
       PGPASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-ReplicaSecure123@}
       PGHOST: pg_master
       POSTGRES_DB: ${DB_DATABASE:-laravel_prod}
       PGDATA: /var/lib/postgresql/data/pgdata
-    command: >
-      sh -c "
-      until pg_isready -h pg_master -p 5432 -U $$PGUSER; do
-        echo 'Waiting for pg_master to accept traffic...';
-        sleep 2;
-      done;
-      echo 'Master is up! Preparing directories and syncing...';
+    # FIX: Switched from command to entrypoint for robust initialization handoff
+    entrypoint: >
+      bash -c "
+      set -e
 
-      # FIX: Natively create the subfolder pathway under the postgres user permissions
-      mkdir -p $$PGDATA;
-      rm -rf $$PGDATA/*;
+      if [ -s \"$$PGDATA/PG_VERSION\" ]; then
+        echo 'Data directory already synced. Booting up standby node...'
+      else
+        echo 'Data directory empty or uninitialized. Preparing syncing parameters...'
+        rm -rf \"$$PGDATA\"/*
 
-      pg_basebackup -h pg_master -D $$PGDATA -U $$PGUSER -vP -R --slot=laravel_replica_slot;
-      echo 'Sync complete! Starting PostgreSQL standby service...';
-      exec postgres
+        until pg_isready -h pg_master -p 5432 -U $$PGUSER -d replication; do
+          echo 'Waiting for pg_master replication channel to accept traffic...';
+          sleep 2;
+        done;
+        echo 'Master is up! Syncing base backup...';
+
+        pg_basebackup -h pg_master -D \"$$PGDATA\" -U \"$$PGUSER\" -vP -Fp -Xs -R --slot=laravel_replica_slot;
+        echo 'Sync complete!';
+      fi
+
+      exec docker-entrypoint.sh postgres -c hot_standby=on
       "
     depends_on:
       pg_master:
@@ -230,7 +239,10 @@ services:
     networks:
       - backend-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$PGUSER -d $$POSTGRES_DB"]
+      # FIX: Replication user connects to replication engine, not the app database
+      test: ["CMD-SHELL", "pg_isready -U $$PGUSER -d replication"]
+      # Need to check below line
+      # test: ["CMD-SHELL", "pg_isready -U $$PGUSER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 5
