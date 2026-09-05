@@ -159,6 +159,31 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  pg_bouncer:
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6432:6432"
+    environment:
+      - DB_HOST=pg_master
+      - DB_PORT=5432
+      - DB_USER=${DB_USERNAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-Welcome123@}
+      - DB_NAME=${DB_DATABASE:-laravel_prod}
+      - LISTEN_PORT=6432
+      - POOL_MODE=transaction # 🌟 Critical Interview Term: Safe for Laravel framework
+      - MAX_CLIENT_CONN=1000 # Allows up to 1000 app connections
+      - DEFAULT_POOL_SIZE=20 # Keeps ONLY 20 real connections open to Postgres
+      - ADMIN_USERS=${DB_USERNAME:-postgres}
+      - TRACK_EXTRA_FLOAT_DIGITS=1
+      # 🌟 THE COMPLIANCE LAYER: Explicitly define the auth handshake protocol
+      - AUTH_TYPE=scram-sha-256
+    networks:
+      - backend-net
+    depends_on:
+      pg_master:
+        condition: service_healthy
+
   pg_master:
     image: postgres:18-alpine
     restart: unless-stopped
